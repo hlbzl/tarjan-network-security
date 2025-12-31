@@ -1,0 +1,1010 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tarjan算法网络安全分析系统</title>
+
+    <link href="/webjars/bootstrap/5.1.3/css/bootstrap.min.css" rel="stylesheet">
+    <link href="/webjars/font-awesome/5.15.4/css/all.min.css" rel="stylesheet">
+    <link href="/webjars/vis/4.21.0/dist/vis.min.css" rel="stylesheet">
+
+    <style>
+        body {
+            background-color: #f8f9fa;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        .navbar-brand {
+            font-weight: bold;
+            color: #2c3e50 !important;
+        }
+
+        .card {
+            border: none;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+
+        .card-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 10px 10px 0 0 !important;
+            font-weight: bold;
+        }
+
+        .network-visualization {
+            height: 600px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            background-color: white;
+        }
+
+        .node-critical {
+            background-color: #ff6b6b !important;
+            border-color: #ff0000 !important;
+        }
+
+        .node-high {
+            background-color: #ffd700 !important;
+            border-color: #ff8c00 !important;
+        }
+
+        .node-medium {
+            background-color: #90ee90 !important;
+            border-color: #32cd32 !important;
+        }
+
+        .node-low {
+            background-color: #87ceeb !important;
+            border-color: #1e90ff !important;
+        }
+
+        .edge-critical {
+            stroke: #ff0000;
+            stroke-width: 3px;
+        }
+
+        .edge-vulnerable {
+            stroke: #ff4500;
+            stroke-width: 2px;
+            stroke-dasharray: 5,5;
+        }
+
+        .edge-core {
+            stroke: #0000ff;
+            stroke-width: 3px;
+        }
+
+        .legend-item {
+            display: inline-block;
+            margin-right: 15px;
+            margin-bottom: 5px;
+        }
+
+        .legend-color {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            margin-right: 5px;
+            border-radius: 3px;
+            vertical-align: middle;
+        }
+
+        .step-item {
+            padding: 8px 12px;
+            margin-bottom: 5px;
+            background-color: #f8f9fa;
+            border-left: 4px solid #667eea;
+            border-radius: 4px;
+        }
+
+        .step-item.discover {
+            border-left-color: #28a745;
+        }
+
+        .step-item.critical {
+            border-left-color: #dc3545;
+        }
+
+        .step-item.bridge {
+            border-left-color: #ffc107;
+        }
+
+        .step-item.scc {
+            border-left-color: #17a2b8;
+        }
+
+        .vulnerability-badge {
+            font-size: 0.8em;
+            padding: 3px 8px;
+            border-radius: 12px;
+        }
+
+        .badge-critical {
+            background-color: #dc3545;
+        }
+
+        .badge-high {
+            background-color: #fd7e14;
+        }
+
+        .badge-medium {
+            background-color: #ffc107;
+            color: #212529;
+        }
+
+        .badge-low {
+            background-color: #28a745;
+        }
+    </style>
+</head>
+<body>
+<!-- 导航栏 -->
+<nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+    <div class="container-fluid">
+        <a class="navbar-brand" href="/">
+            <i class="fas fa-shield-alt"></i> 网络安全分析系统
+        </a>
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+        <div class="collapse navbar-collapse" id="navbarNav">
+            <ul class="navbar-nav ms-auto">
+                <li class="nav-item">
+                    <a class="nav-link active" href="/">
+                        <i class="fas fa-home"></i> 首页
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="/analyze">
+                        <i class="fas fa-search"></i> 网络分析
+                    </a>
+                </li>
+                <li class="nav-item dropdown">
+                    <a class="nav-link dropdown-toggle" href="#" id="networkDropdown" role="button"
+                       data-bs-toggle="dropdown">
+                        <i class="fas fa-network-wired"></i> 网络类型
+                    </a>
+                    <ul class="dropdown-menu">
+                        <li><a class="dropdown-item" href="#" onclick="loadNetwork('enterprise')">企业网络</a></li>
+                        <li><a class="dropdown-item" href="#" onclick="loadNetwork('datacenter')">数据中心</a></li>
+                        <li><a class="dropdown-item" href="#" onclick="loadNetwork('campus')">校园网络</a></li>
+                    </ul>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="#" data-bs-toggle="modal" data-bs-target="#aboutModal">
+                        <i class="fas fa-info-circle"></i> 关于
+                    </a>
+                </li>
+            </ul>
+        </div>
+    </div>
+</nav>
+
+<!-- 主要内容 -->
+<div class="container-fluid mt-4">
+    <div class="row">
+        <!-- 左侧网络可视化 -->
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header">
+                    <i class="fas fa-project-diagram"></i> 网络拓扑可视化
+                </div>
+                <div class="card-body">
+                    <div id="network-container" class="network-visualization"></div>
+
+                    <!-- 图例 -->
+                    <div class="mt-3">
+                        <h6><i class="fas fa-key"></i> 图例说明</h6>
+                        <div class="d-flex flex-wrap">
+                            <div class="legend-item">
+                                <span class="legend-color" style="background-color: #FF6B6B;"></span>
+                                <span>关键节点</span>
+                            </div>
+                            <div class="legend-item">
+                                <span class="legend-color" style="background-color: #FFD700;"></span>
+                                <span>高风险节点</span>
+                            </div>
+                            <div class="legend-item">
+                                <span class="legend-color" style="background-color: #90EE90;"></span>
+                                <span>中风险节点</span>
+                            </div>
+                            <div class="legend-item">
+                                <span class="legend-color" style="background-color: #87CEEB;"></span>
+                                <span>低风险节点</span>
+                            </div>
+                            <div class="legend-item">
+                                <span class="legend-color" style="border: 2px solid #FF0000; background: white;"></span>
+                                <span>脆弱连接</span>
+                            </div>
+                            <div class="legend-item">
+                                <span class="legend-color" style="border: 2px solid #0000FF; background: white;"></span>
+                                <span>核心连接</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 右侧控制面板 -->
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-header">
+                    <i class="fas fa-cogs"></i> 控制面板
+                </div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <label class="form-label">选择网络类型</label>
+                        <select class="form-select" id="networkType">
+                            <option value="enterprise">企业网络</option>
+                            <option value="datacenter">数据中心</option>
+                            <option value="campus">校园网络</option>
+                        </select>
+                    </div>
+
+                    <div class="d-grid gap-2">
+                        <button class="btn btn-primary" onclick="loadSelectedNetwork()">
+                            <i class="fas fa-sync-alt"></i> 加载网络
+                        </button>
+                        <button class="btn btn-success" onclick="analyzeNetwork()">
+                            <i class="fas fa-search"></i> 执行Tarjan算法分析
+                        </button>
+                        <button class="btn btn-info" onclick="showAnimation()">
+                            <i class="fas fa-play-circle"></i> 算法动画演示
+                        </button>
+                    </div>
+
+                    <hr>
+
+                    <div class="mt-3">
+                        <h6><i class="fas fa-info-circle"></i> 网络信息</h6>
+                        <div id="network-info">
+                            <p>节点数量: <span id="node-count">0</span></p>
+                            <p>连接数量: <span id="edge-count">0</span></p>
+                            <p>当前网络: <span id="current-network">企业网络</span></p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card mt-3">
+                <div class="card-header">
+                    <i class="fas fa-exclamation-triangle"></i> 快速分析结果
+                </div>
+                <div class="card-body">
+                    <div id="quick-analysis">
+                        <p class="text-muted">点击"执行分析"查看结果</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 分析结果区域 -->
+    <div class="row mt-4 d-none" id="results-section">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <i class="fas fa-chart-bar"></i> 安全分析报告
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <!-- 算法执行步骤 -->
+                        <div class="col-md-6">
+                            <h5><i class="fas fa-code"></i> 算法执行步骤</h5>
+                            <div id="execution-steps" style="max-height: 400px; overflow-y: auto;">
+                                <!-- 步骤将通过JavaScript动态添加 -->
+                            </div>
+                        </div>
+
+                        <!-- 安全报告 -->
+                        <div class="col-md-6">
+                            <h5><i class="fas fa-file-alt"></i> 安全评估</h5>
+                            <div id="security-report">
+                                <!-- 报告将通过JavaScript动态添加 -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 关于模态框 -->
+<div class="modal fade" id="aboutModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">关于网络安全分析系统</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>本系统基于Tarjan算法实现网络安全分析，主要功能包括：</p>
+                <ul>
+                    <li>网络拓扑可视化</li>
+                    <li>强连通分量(SCC)检测</li>
+                    <li>关键节点(割点)识别</li>
+                    <li>脆弱连接(桥)检测</li>
+                    <li>攻击路径分析</li>
+                    <li>安全风险评估</li>
+                </ul>
+                <p>使用技术：Spring Boot, Java, vis.js, Bootstrap</p>
+                <p>版本：1.0.0</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- JavaScript依赖 -->
+<script src="/webjars/jquery/3.6.0/jquery.min.js"></script>
+<script src="/webjars/bootstrap/5.1.3/js/bootstrap.bundle.min.js"></script>
+<script src="/webjars/vis/4.21.0/dist/vis.min.js"></script>
+
+<script>
+    // 全局变量
+    let network = null;
+    let currentNetworkData = null;
+    let analysisResult = null;
+
+    // 页面加载完成后初始化
+    $(document).ready(function() {
+        loadSampleNetwork();
+    });
+
+    // 加载示例网络
+    function loadSampleNetwork() {
+        $.get('/api/network/sample', function(data) {
+            currentNetworkData = data;
+            visualizeNetwork(data);
+            updateNetworkInfo(data);
+        });
+    }
+
+    // 加载选中的网络
+    function loadSelectedNetwork() {
+        const networkType = $('#networkType').val();
+        loadNetwork(networkType);
+    }
+
+    // 加载网络
+    function loadNetwork(type) {
+        $.get(`/api/network/${type}`, function(data) {
+            currentNetworkData = data;
+            visualizeNetwork(data);
+            updateNetworkInfo(data);
+            $('#current-network').text(getNetworkName(type));
+            $('#networkType').val(type);
+
+            // 隐藏之前的结果
+            $('#results-section').addClass('d-none');
+            $('#quick-analysis').html('<p class="text-muted">网络已加载，点击"执行分析"查看结果</p>');
+        });
+    }
+
+    // 获取网络名称
+    function getNetworkName(type) {
+        const names = {
+            'enterprise': '企业网络',
+            'datacenter': '数据中心',
+            'campus': '校园网络'
+        };
+        return names[type] || '未知网络';
+    }
+
+    // 可视化网络
+    function visualizeNetwork(data) {
+        const container = document.getElementById('network-container');
+
+        // 如果已经存在网络实例，销毁它
+        if (network) {
+            network.destroy();
+        }
+
+        // 创建节点和边的数据集
+        const nodes = new vis.DataSet(data.nodes);
+        const edges = new vis.DataSet(data.edges);
+
+        // 配置选项
+        const options = {
+            nodes: {
+                shape: 'dot',
+                size: 20,
+                font: {
+                    size: 14,
+                    color: '#000000'
+                },
+                borderWidth: 2,
+                shadow: true
+            },
+            edges: {
+                width: 2,
+                shadow: true,
+                smooth: {
+                    type: 'continuous'
+                },
+                font: {
+                    size: 12,
+                    align: 'middle',
+                    color: '#000000'
+                }
+            },
+            physics: {
+                enabled: true,
+                stabilization: {
+                    iterations: 100
+                }
+            },
+            interaction: {
+                hover: true,
+                tooltipDelay: 200
+            }
+        };
+
+        // 创建网络
+        const networkData = { nodes: nodes, edges: edges };
+        network = new vis.Network(container, networkData, options);
+
+        // 添加点击事件监听
+        network.on('click', function(params) {
+            if (params.nodes.length > 0) {
+                const nodeId = params.nodes[0];
+                showNodeInfo(nodeId);
+            }
+        });
+    }
+
+    // 显示节点信息
+    function showNodeInfo(nodeId) {
+        const node = currentNetworkData.nodes.find(n => n.id === nodeId);
+        if (node) {
+            const modalContent = `
+                    <div class="modal fade" id="nodeInfoModal" tabindex="-1">
+                        <div class="modal-dialog">
+                            <div class="modal-content">
+                                <div class="modal-header">
+                                    <h5 class="modal-title">节点信息</h5>
+                                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                </div>
+                                <div class="modal-body">
+                                    <p><strong>ID:</strong> ${node.id}</p>
+                                    <p><strong>名称:</strong> ${node.label}</p>
+                                    <p><strong>类型:</strong> ${node.type}</p>
+                                    <p><strong>风险等级:</strong>
+                                        <span class="badge vulnerability-badge badge-${node.riskLevel}">
+                                            ${node.riskLevel.toUpperCase()}
+                                        </span>
+                                    </p>
+                                </div>
+                                <div class="modal-footer">
+                                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+
+            // 移除之前的模态框
+            $('#nodeInfoModal').remove();
+
+            // 添加新的模态框
+            $('body').append(modalContent);
+
+            // 显示模态框
+            const nodeModal = new bootstrap.Modal(document.getElementById('nodeInfoModal'));
+            nodeModal.show();
+        }
+    }
+
+    // 更新网络信息
+    function updateNetworkInfo(data) {
+        $('#node-count').text(data.nodes.length);
+        $('#edge-count').text(data.edges.length);
+    }
+
+    // 分析网络
+    function analyzeNetwork() {
+        if (!currentNetworkData) {
+            alert('请先加载网络！');
+            return;
+        }
+
+        // 显示加载状态
+        $('#quick-analysis').html(`
+                <div class="text-center">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">分析中...</span>
+                    </div>
+                    <p class="mt-2">正在执行Tarjan算法分析...</p>
+                </div>
+            `);
+
+        // 发送分析请求
+        $.ajax({
+            url: '/api/network/analyze',
+            type: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify({
+                nodes: currentNetworkData.nodes,
+                edges: currentNetworkData.edges
+            }),
+            success: function(response) {
+                analysisResult = response.result;
+                displayAnalysisResults(response.result);
+
+                // 高亮关键节点和脆弱连接
+                highlightCriticalElements(response.result);
+
+                // 显示结果区域
+                $('#results-section').removeClass('d-none');
+            },
+            error: function() {
+                $('#quick-analysis').html('<p class="text-danger">分析失败，请重试！</p>');
+            }
+        });
+    }
+
+    // 高亮关键元素
+    function highlightCriticalElements(result) {
+        // 高亮关键节点
+        const criticalNodes = result.criticalNodes || [];
+        const nodes = network.body.data.nodes;
+
+        nodes.forEach(node => {
+            if (criticalNodes.includes(node.id)) {
+                nodes.update({
+                    id: node.id,
+                    color: {
+                        background: '#FF0000',
+                        border: '#8B0000'
+                    },
+                    size: 30,
+                    borderWidth: 3
+                });
+            }
+        });
+
+        // 高亮脆弱连接
+        const bridges = result.bridges || [];
+        const edges = network.body.data.edges;
+
+        bridges.forEach(bridge => {
+            edges.update({
+                id: `${bridge.from}-${bridge.to}`,
+                color: '#FF4500',
+                width: 3,
+                dashes: [5, 5]
+            });
+        });
+    }
+
+    // 显示分析结果
+    function displayAnalysisResults(result) {
+        // 更新快速分析区域
+        const report = result.securityReport;
+        let quickHtml = `
+                <div class="alert alert-info">
+                    <h6><i class="fas fa-chart-pie"></i> 分析概览</h6>
+                    <p>关键节点: ${report.criticalNodesCount} 个</p>
+                    <p>脆弱连接: ${report.bridgesCount} 条</p>
+                    <p>强连通分量: ${report.sccCount} 个</p>
+                    <p>网络弹性: ${report.networkResilience.toFixed(1)}%</p>
+                </div>
+            `;
+
+        // 添加漏洞信息
+        if (report.vulnerabilities && report.vulnerabilities.length > 0) {
+            quickHtml += `<h6><i class="fas fa-exclamation-circle"></i> 主要漏洞</h6>`;
+            report.vulnerabilities.slice(0, 3).forEach(vuln => {
+                quickHtml += `
+                        <div class="alert alert-warning py-2">
+                            <strong>${vuln.type}</strong>: ${vuln.description}
+                            <span class="badge vulnerability-badge badge-${vuln.severity.toLowerCase()} float-end">
+                                ${vuln.severity}
+                            </span>
+                        </div>
+                    `;
+            });
+        }
+
+        $('#quick-analysis').html(quickHtml);
+
+        // 显示执行步骤
+        displayExecutionSteps(result.executionSteps);
+
+        // 显示详细报告
+        displaySecurityReport(report);
+    }
+
+    // 显示执行步骤
+    function displayExecutionSteps(steps) {
+        const container = $('#execution-steps');
+        container.empty();
+
+        if (steps && steps.length > 0) {
+            steps.forEach((step, index) => {
+                let stepClass = 'step-item';
+                if (step.includes('发现节点')) stepClass += ' discover';
+                else if (step.includes('关键节点')) stepClass += ' critical';
+                else if (step.includes('脆弱连接')) stepClass += ' bridge';
+                else if (step.includes('强连通分量')) stepClass += ' scc';
+
+                container.append(`
+                        <div class="${stepClass}">
+                            <small>步骤 ${index + 1}:</small> ${step}
+                        </div>
+                    `);
+            });
+        } else {
+            container.html('<p class="text-muted">无执行步骤记录</p>');
+        }
+    }
+
+    // 显示安全报告
+    function displaySecurityReport(report) {
+        const container = $('#security-report');
+        let html = '';
+
+        // 网络概况
+        html += `
+                <div class="card mb-3">
+                    <div class="card-body">
+                        <h6><i class="fas fa-info-circle"></i> 网络概况</h6>
+                        <div class="row">
+                            <div class="col-6">
+                                <p>节点总数: ${report.totalNodes}</p>
+                                <p>连接总数: ${report.totalEdges}</p>
+                            </div>
+                            <div class="col-6">
+                                <p>关键节点: ${report.criticalNodesCount}</p>
+                                <p>脆弱连接: ${report.bridgesCount}</p>
+                            </div>
+                        </div>
+                        <div class="progress" style="height: 20px;">
+                            <div class="progress-bar bg-success" style="width: ${report.networkResilience}%">
+                                网络弹性: ${report.networkResilience.toFixed(1)}%
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+        // 攻击路径
+        if (report.attackPaths && report.attackPaths.length > 0) {
+            html += `
+                    <div class="card mb-3">
+                        <div class="card-body">
+                            <h6><i class="fas fa-bug"></i> 潜在攻击路径</h6>
+                `;
+
+            report.attackPaths.forEach(path => {
+                html += `
+                        <div class="mb-2">
+                            <strong>${path.source} → ${path.target}</strong>
+                            <span class="badge bg-danger float-end">${path.riskLevel}</span>
+                            <br>
+                            <small>经过关键节点: ${path.criticalNodesOnPath.join(', ') || '无'}</small>
+                        </div>
+                    `;
+            });
+
+            html += `</div></div>`;
+        }
+
+        // 安全建议
+        if (report.recommendations && report.recommendations.length > 0) {
+            html += `
+                    <div class="card">
+                        <div class="card-body">
+                            <h6><i class="fas fa-lightbulb"></i> 安全建议</h6>
+                `;
+
+            report.recommendations.forEach(rec => {
+                const priorityClass = rec.priority === 'HIGH' ? 'danger' :
+                    rec.priority === 'MEDIUM' ? 'warning' : 'info';
+
+                html += `
+                        <div class="alert alert-${priorityClass} py-2">
+                            <strong>${rec.action}</strong>
+                            <span class="badge bg-${priorityClass} float-end">${rec.priority}</span>
+                            <br>
+                            <small>${rec.description}</small>
+                        </div>
+                    `;
+            });
+
+            html += `</div></div>`;
+        }
+
+        container.html(html);
+    }
+
+    // 显示算法动画
+    function showAnimation() {
+        if (!analysisResult || !analysisResult.executionSteps) {
+            alert('请先执行分析！');
+            return;
+        }
+
+        // 创建动画模态框
+        const modalContent = `
+                <div class="modal fade" id="animationModal" tabindex="-1">
+                    <div class="modal-dialog modal-lg">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h5 class="modal-title">Tarjan算法执行动画</h5>
+                                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                            </div>
+                            <div class="modal-body">
+                                <div class="row">
+                                    <div class="col-md-8">
+                                        <div id="animation-network" style="height: 400px; border: 1px solid #ddd;"></div>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <div id="animation-steps" style="height: 400px; overflow-y: auto;">
+                                            <!-- 动画步骤将在这里显示 -->
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="mt-3">
+                                    <button class="btn btn-primary btn-sm" onclick="animationPrevious()">
+                                        <i class="fas fa-backward"></i> 上一步
+                                    </button>
+                                    <button class="btn btn-success btn-sm" onclick="animationPlay()">
+                                        <i class="fas fa-play"></i> 播放
+                                    </button>
+                                    <button class="btn btn-warning btn-sm" onclick="animationPause()">
+                                        <i class="fas fa-pause"></i> 暂停
+                                    </button>
+                                    <button class="btn btn-secondary btn-sm" onclick="animationNext()">
+                                        <i class="fas fa-forward"></i> 下一步
+                                    </button>
+                                    <button class="btn btn-danger btn-sm" onclick="animationReset()">
+                                        <i class="fas fa-redo"></i> 重置
+                                    </button>
+                                    <span class="float-end">
+                                        速度: <input type="range" id="animationSpeed" min="100" max="2000" value="500">
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+        // 移除之前的模态框
+        $('#animationModal').remove();
+
+        // 添加新的模态框
+        $('body').append(modalContent);
+
+        // 显示模态框
+        const animationModal = new bootstrap.Modal(document.getElementById('animationModal'));
+        animationModal.show();
+
+        // 初始化动画
+        initAnimation();
+    }
+
+    // 动画相关变量
+    let animationNetwork = null;
+    let currentStep = 0;
+    let animationInterval = null;
+    let animationSpeed = 500;
+
+    // 初始化动画
+    function initAnimation() {
+        // 创建动画网络
+        const container = document.getElementById('animation-network');
+        const nodes = new vis.DataSet(currentNetworkData.nodes);
+        const edges = new vis.DataSet(currentNetworkData.edges);
+
+        const options = {
+            physics: {
+                enabled: true,  // 必须为true
+                stabilization: {
+                    iterations: 100,  // 稳定化迭代次数
+                    fit: true         // 自适应画布大小
+                },
+                solver: 'forceAtlas2Based',  // 推荐使用这个求解器
+                forceAtlas2Based: {
+                    gravitationalConstant: -30,  // 引力常数，负值表示斥力
+                    centralGravity: 0.05,        // 中心引力
+                    springLength: 100,           // 弹簧长度
+                    springConstant: 0.08,        // 弹簧刚度
+                    damping: 0.4,                // 阻尼
+                    avoidOverlap: 1              // 避免重叠
+                }
+            },
+            interaction: {
+                dragNodes: true,
+                dragView: true,
+                zoomView: true
+            },
+            layout: {
+                improvedLayout: true,    // 使用改进的布局算法
+                hierarchical: false      // 不使用层次布局
+            }
+        };
+
+        animationNetwork = new vis.Network(container, { nodes, edges }, options);
+
+        // 重置动画状态
+        currentStep = 0;
+        animationSpeed = 500;
+        $('#animationSpeed').val(animationSpeed);
+
+        // 显示第一步
+        showAnimationStep(currentStep);
+    }
+
+    // 显示动画步骤
+    function showAnimationStep(stepIndex) {
+        const steps = analysisResult.executionSteps;
+        if (stepIndex < 0 || stepIndex >= steps.length) return;
+
+        const step = steps[stepIndex];
+        const stepContainer = $('#animation-steps');
+
+        // 清空步骤显示
+        stepContainer.empty();
+
+        // 显示当前步骤之前的步骤
+        for (let i = 0; i <= stepIndex; i++) {
+            const stepClass = getStepClass(steps[i]);
+            stepContainer.append(`
+                    <div class="step-item ${stepClass}">
+                        <small>步骤 ${i + 1}:</small> ${steps[i]}
+                    </div>
+                `);
+        }
+
+        // 滚动到底部
+        stepContainer.scrollTop(stepContainer[0].scrollHeight);
+
+        // 根据步骤类型高亮网络元素
+        highlightAnimationStep(step);
+
+        // 更新当前步骤
+        currentStep = stepIndex;
+    }
+
+    // 获取步骤CSS类
+    function getStepClass(step) {
+        if (step.includes('发现节点')) return 'discover';
+        if (step.includes('关键节点')) return 'critical';
+        if (step.includes('脆弱连接')) return 'bridge';
+        if (step.includes('强连通分量')) return 'scc';
+        if (step.includes('后向边')) return 'back-edge';
+        return '';
+    }
+
+    // 高亮动画步骤
+    function highlightAnimationStep(step) {
+        // 重置所有节点和边的颜色
+        const nodes = animationNetwork.body.data.nodes;
+        const edges = animationNetwork.body.data.edges;
+
+        nodes.forEach(node => {
+            const originalNode = currentNetworkData.nodes.find(n => n.id === node.id);
+            nodes.update({
+                id: node.id,
+                color: originalNode.color,
+                size: 20
+            });
+        });
+
+
+        edges.forEach(edge => {
+            const originalEdge = currentNetworkData.edges.find(e =>
+                e.from === edge.from && e.to === edge.to
+            );
+            edges.update({
+                id: edge.id,
+                //color: originalEdge.color,
+                //width: originalEdge.width || 2
+            });
+        });
+
+        // 根据步骤类型高亮特定元素
+        if (step.includes('发现节点:')) {
+            const nodeId = step.split(': ')[1].split(' ')[0];
+            nodes.update({
+                id: nodeId,
+                color: { background: '#FFFF00', border: '#FFD700' },
+                size: 30
+            });
+        } else if (step.includes('关键节点:')) {
+            const nodeId = step.split(': ')[1];
+            nodes.update({
+                id: nodeId,
+                color: { background: '#FF0000', border: '#8B0000' },
+                size: 35
+            });
+        } else if (step.includes('脆弱连接:')) {
+            const parts = step.split(': ')[1].split(' - ');
+            const from = parts[0];
+            const to = parts[1];
+            edges.update({
+                id: `${from}-${to}`,
+                color: '#FF4500',
+                width: 4,
+                dashes: [5, 5]
+            });
+        } else if (step.includes('后向边:')) {
+            const parts = step.split (': ')[1].split(' -> ');
+            const from = parts[0];
+            const to = parts[1];
+            edges.update({
+                id: `${from}-${to}`,
+                color: '#FFA500',
+                width: 3
+            });
+        } else if (step.includes('强连通分量:')) {
+            const sccStr = step.split(': ')[1];
+            const sccNodes = sccStr.replace(/[\[\]]/g, '').split(', ');
+            sccNodes.forEach(nodeId => {
+                nodes.update({
+                    id: nodeId.trim(),
+                    color: { background: '#00FF00', border: '#008000' },
+                    size: 25
+                });
+            });
+        }
+    }
+
+    // 动画控制函数
+    function animationPrevious() {
+        if (currentStep > 0) {
+            showAnimationStep(currentStep - 1);
+        }
+    }
+
+    function animationNext() {
+        if (currentStep < analysisResult.executionSteps.length - 1) {
+            showAnimationStep(currentStep + 1);
+        }
+    }
+
+    function animationPlay() {
+        if (animationInterval) clearInterval(animationInterval);
+
+        animationInterval = setInterval(() => {
+            if (currentStep < analysisResult.executionSteps.length - 1) {
+                animationNext();
+            } else {
+                clearInterval(animationInterval);
+            }
+        }, animationSpeed);
+    }
+
+    function animationPause() {
+        if (animationInterval) {
+            clearInterval(animationInterval);
+            animationInterval = null;
+        }
+    }
+
+    function animationReset() {
+        animationPause();
+        currentStep = 0;
+        showAnimationStep(currentStep);
+    }
+
+    // 速度控制
+    $(document).on('input', '#animationSpeed', function() {
+        animationSpeed = parseInt($(this).val());
+        if (animationInterval) {
+            animationPause();
+            animationPlay();
+        }
+    });
+</script>
+</body>
+</html>

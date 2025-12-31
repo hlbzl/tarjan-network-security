@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>网络分析结果</title>
+
+    <link href="/webjars/bootstrap/5.1.3/css/bootstrap.min.css" rel="stylesheet">
+    <link href="/webjars/font-awesome/5.15.4/css/all.min.css" rel="stylesheet">
+    <link href="/webjars/vis/4.21.0/dist/vis.min.css" rel="stylesheet">
+
+    <style>
+        body {
+            background-color: #f5f7fb;
+        }
+
+        .result-card {
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        .result-header {
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 10px;
+            margin-bottom: 20px;
+        }
+
+        .metric-box {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+            margin-bottom: 15px;
+        }
+
+        .metric-value {
+            font-size: 2rem;
+            font-weight: bold;
+        }
+
+        .metric-label {
+            font-size: 0.9rem;
+            opacity: 0.9;
+        }
+
+        .vulnerability-item {
+            border-left: 4px solid;
+            padding: 10px 15px;
+            margin-bottom: 10px;
+            background-color: #f8f9fa;
+        }
+
+        .vulnerability-critical {
+            border-left-color: #dc3545;
+        }
+
+        .vulnerability-high {
+            border-left-color: #fd7e14;
+        }
+
+        .vulnerability-medium {
+            border-left-color: #ffc107;
+        }
+
+        .vulnerability-low {
+            border-left-color: #28a745;
+        }
+
+        .step-timeline {
+            position: relative;
+            padding-left: 30px;
+        }
+
+        .step-timeline::before {
+            content: '';
+            position: absolute;
+            left: 15px;
+            top: 0;
+            bottom: 0;
+            width: 2px;
+            background-color: #dee2e6;
+        }
+
+        .step-item {
+            position: relative;
+            margin-bottom: 20px;
+        }
+
+        .step-dot {
+            position: absolute;
+            left: -30px;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background-color: #6c757d;
+        }
+
+        .step-dot.discover {
+            background-color: #28a745;
+        }
+
+        .step-dot.critical {
+            background-color: #dc3545;
+        }
+
+        .step-dot.bridge {
+            background-color: #ffc107;
+        }
+
+        .step-dot.scc {
+            background-color: #17a2b8;
+        }
+    </style>
+</head>
+<body>
+<nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+    <div class="container-fluid">
+        <a class="navbar-brand" href="/">
+            <i class="fas fa-shield-alt"></i> 网络安全分析系统
+        </a>
+        <a class="btn btn-outline-light" href="/">
+            <i class="fas fa-arrow-left"></i> 返回首页
+        </a>
+    </div>
+</nav>
+
+<div class="container-fluid mt-4">
+    <div class="row">
+        <div class="col-md-8">
+            <!-- 网络可视化 -->
+            <div class="result-card">
+                <div class="result-header">
+                    <h4><i class="fas fa-project-diagram"></i> 网络拓扑分析结果</h4>
+                </div>
+                <div id="network-visualization" style="height: 500px; border: 1px solid #ddd;"></div>
+            </div>
+
+            <!-- 算法执行步骤 -->
+            <div class="result-card">
+                <div class="result-header">
+                    <h4><i class="fas fa-code"></i> Tarjan算法执行步骤</h4>
+                </div>
+                <div class="step-timeline">
+                    <div th:each="step, stat : ${executionSteps}">
+                        <div class="step-item">
+                            <div class="step-dot"
+                                 th:classappend="${step.contains('发现节点')} ? 'discover' :
+                                                     (${step.contains('关键节点')} ? 'critical' :
+                                                     (${step.contains('脆弱连接')} ? 'bridge' :
+                                                     (${step.contains('强连通分量')} ? 'scc' : '')))"></div>
+                            <div class="card">
+                                <div class="card-body">
+                                    <small>步骤 [[${stat.index + 1}]]:</small>
+                                    [[${step}]]
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-4">
+            <!-- 关键指标 -->
+            <div class="result-card">
+                <div class="result-header">
+                    <h4><i class="fas fa-chart-line"></i> 关键指标</h4>
+                </div>
+                <div class="row">
+                    <div class="col-6">
+                        <div class="metric-box">
+                            <div class="metric-value" th:text="${result.securityReport.criticalNodesCount}">0</div>
+                            <div class="metric-label">关键节点</div>
+                        </div>
+                    </div>
+                    <div class="col-6">
+                        <div class="metric-box">
+                            <div class="metric-value" th:text="${result.securityReport.bridgesCount}">0</div>
+                            <div class="metric-label">脆弱连接</div>
+                        </div>
+                    </div>
+                    <div class="col-6">
+                        <div class="metric-box">
+                            <div class="metric-value" th:text="${result.securityReport.sccCount}">0</div>
+                            <div class="metric-label">强连通分量</div>
+                        </div>
+                    </div>
+                    <div class="col-6">
+                        <div class="metric-box">
+                            <div class="metric-value" th:text="${#numbers.formatDecimal(result.securityReport.networkResilience, 1, 1)}">0</div>
+                            <div class="metric-label">网络弹性%</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 安全漏洞 -->
+            <div class="result-card">
+                <div class="result-header">
+                    <h4><i class="fas fa-exclamation-triangle"></i> 发现的安全漏洞</h4>
+                </div>
+                <div th:each="vuln : ${result.securityReport.vulnerabilities}">
+                    <div class="vulnerability-item"
+                         th:classappend="'vulnerability-' + ${vuln.severity.toLowerCase()}">
+                        <h6 th:text="${vuln.type}">漏洞类型</h6>
+                        <p th:text="${vuln.description}">漏洞描述</p>
+                        <span class="badge"
+                              th:class="${vuln.severity == 'CRITICAL'} ? 'bg-danger' :
+                                           (${vuln.severity == 'HIGH'} ? 'bg-warning' :
+                                           (${vuln.severity == 'MEDIUM'} ? 'bg-info' : 'bg-success'))"
+                              th:text="${vuln.severity}">
+                                严重等级
+                            </span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 安全建议 -->
+            <div class="result-card">
+                <div class="result-header">
+                    <h4><i class="fas fa-lightbulb"></i> 安全建议</h4>
+                </div>
+                <div th:each="rec : ${result.securityReport.recommendations}">
+                    <div class="alert"
+                         th:class="${rec.priority == 'HIGH'} ? 'alert-danger' :
+                                       (${rec.priority == 'MEDIUM'} ? 'alert-warning' : 'alert-info')">
+                        <h6 th:text="${rec.action}">建议</h6>
+                        <p th:text="${rec.description}">描述</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- JavaScript依赖 -->
+<script src="/webjars/jquery/3.6.0/jquery.min.js"></script>
+<script src="/webjars/bootstrap/5.1.3/js/bootstrap.bundle.min.js"></script>
+<script src="/webjars/vis/4.21.0/dist/vis.min.js"></script>
+
+<script th:inline="javascript">
+    /*<![CDATA[*/
+    // 获取网络数据
+    const networkData = {
+        nodes: [
+            /*[[${network.nodes}]]*/
+        ],
+        edges: [
+            /*[[${network.edges}]]*/
+        ]
+    };
+
+    // 获取分析结果
+    const criticalNodes = /*[[${result.criticalNodes}]]*/ [];
+    const bridges = /*[[${result.bridges}]]*/ [];
+
+    // 页面加载完成后初始化网络
+    $(document).ready(function() {
+        visualizeNetwork();
+    });
+
+    // 可视化网络
+    function visualizeNetwork() {
+        const container = document.getElementById('network-visualization');
+
+        // 转换节点格式
+        const nodes = new vis.DataSet(networkData.nodes.map(node => ({
+            id: node.id,
+            label: node.name || node.id,
+            color: getNodeColor(node),
+            shape: getNodeShape(node.type),
+            size: 25
+        })));
+
+        // 转换边格式
+        const edges = new vis.DataSet(networkData.edges.map(edge => ({
+            id: edge.from + '-' + edge.to,
+            from: edge.from,
+            to: edge.to,
+            label: edge.type,
+            color: getEdgeColor(edge),
+            width: 2
+        })));
+
+        // 高亮关键节点和脆弱连接
+        criticalNodes.forEach(nodeId => {
+            nodes.update({
+                id: nodeId,
+                color: { background: '#FF0000', border: '#8B0000' },
+                size: 35,
+                borderWidth: 3
+            });
+        });
+
+        bridges.forEach(bridge => {
+            edges.update({
+                id: bridge.from + '-' + bridge.to,
+                color: '#FF4500',
+                width: 4,
+                dashes: [5, 5]
+            });
+        });
+
+        // 配置选项
+        const options = {
+            nodes: {
+                font: {
+                    size: 14,
+                    color: '#000000'
+                },
+                borderWidth: 2,
+                shadow: true
+            },
+            edges: {
+                smooth: {
+                    type: 'continuous'
+                },
+                font: {
+                    size: 12,
+                    align: 'middle'
+                }
+            },
+            physics: {
+                enabled: true,
+                stabilization: {
+                    iterations: 100
+                }
+            },
+            interaction: {
+                hover: true
+            }
+        };
+
+        // 创建网络
+        const data = { nodes: nodes, edges: edges };
+        const network = new vis.Network(container, data, options);
+    }
+
+    // 获取节点颜色
+    function getNodeColor(node) {
+        switch (node.riskLevel) {
+            case 'critical':
+                return { background: '#FF6B6B', border: '#FF0000' };
+            case 'high':
+                return { background: '#FFD700', border: '#FF8C00' };
+            case 'medium':
+                return { background: '#90EE90', border: '#32CD32' };
+            default:
+                return { background: '#87CEEB', border: '#1E90FF' };
+        }
+    }
+
+    // 获取节点形状
+    function getNodeShape(type) {
+        switch (type) {
+            case 'firewall':
+                return 'hexagon';
+            case 'switch':
+            case 'router':
+                return 'square';
+            case 'server':
+            case 'database':
+                return 'ellipse';
+            default:
+                return 'circle';
+        }
+    }
+
+    // 获取边颜色
+    function getEdgeColor(edge) {
+        switch (edge.type) {
+            case 'critical':
+                return '#FF0000';
+            case 'vulnerable':
+                return '#FF4500';
+            case 'core':
+                return '#0000FF';
+            default:
+                return '#808080';
+        }
+    }
+    /*]]>*/
+</script>
+</body>
+</html>
